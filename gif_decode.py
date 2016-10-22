@@ -6,7 +6,7 @@
 import struct
 import binascii
 from gif_helpers import read_bits_value_from_bytes
-from exceptions import BlockSizeException, BlockTerminatorMissException
+from gif_exceptions import BlockSizeException, BlockTerminatorMissException
 
 
 class GifDecoder(object):
@@ -37,9 +37,8 @@ class GifDecoder(object):
             self.read_global_color_table(f)
             print self.global_color_table
             #  读取数据
-            while GifDecoder.identify_block(f) is not True:
+            while self.identify_block(f) is not True:
                 continue
-            print self.body_data
 
     def identify_block(self, f):
         """
@@ -48,7 +47,7 @@ class GifDecoder(object):
         :return: 读取是否结束 Ture:结束, False:未结束
         """
         identify_byte = binascii.hexlify(f.read(1))
-        if identify_byte == '2C':
+        if identify_byte == '2c':
             print "Comes Image Data Block"
             self.body_data.append(GifDecoder.read_graphic_data(f))
         elif self.header['Version'] == '89a' and identify_byte == '21':
@@ -289,3 +288,19 @@ if __name__ == '__main__':
     decoder = GifDecoder()
     gif_file = "data/rotate.gif"
     decoder.read_gif(gif_file)
+    with open('output/info.txt', 'wb') as f:
+        for k, v in decoder.header.iteritems():
+            f.write("{} : {}\n".format(k, v))
+        for k, v in decoder.logical_screen_descriptor.iteritems():
+            f.write("{} : {}\n".format(k, v))
+        for index_, k in enumerate(decoder.global_color_table):
+            if index_ % 3 == 0:
+                f.write("red: {}\n".format(k))
+            elif index_ % 3 == 1:
+                f.write("green: {}\n".format(k))
+            else:
+                f.write("blue: {}\n".format(k))
+        for item_ in decoder.body_data:
+            for k, v in item_.iteritems():
+                f.write("{} : {}\n".format(k, v))
+

@@ -4,7 +4,7 @@
 @author wei.zheng
 @date 2016.10.20
 """
-from exceptions import ByteRangeException
+from gif_exceptions import ByteRangeException
 
 
 def read_bits_value_from_bytes(byte_, start_index, length):
