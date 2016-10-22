@@ -4,6 +4,7 @@
 @author wei.zheng
 @date 2016.10.20
 """
+from exceptions import ByteRangeException
 
 
 def read_bits_value_from_bytes(byte_, start_index, length):
@@ -14,6 +15,8 @@ def read_bits_value_from_bytes(byte_, start_index, length):
     :param length: 读取的长度
     :return: 数值
     """
+    if start_index + length > 8:
+        raise ByteRangeException()
     val_ = 0
     byte = ord(byte_)
     for i in range(start_index, start_index+length):

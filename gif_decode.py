@@ -4,15 +4,24 @@
 @date 2016.10.19
 """
 import struct
+import binascii
 from gif_helpers import read_bits_value_from_bytes
+from exceptions import BlockSizeException, BlockTerminatorMissException
 
 
 class GifDecoder(object):
+
+    _IMAGE_DATA_BLOCK = 1
+    _GRAPHIC_CONTROL_EXTENSION = 2
+    _COMMENT_EXTENSION = 3
+    _PLAIN_TEXT_EXTENSION = 4
+    _APPLICATION_EXTENSION = 5
 
     def __init__(self):
         self.header = dict()
         self.logical_screen_descriptor = dict()
         self.global_color_table = []
+        self.body_data = []  # 依次存储中间的数据
 
     def read_gif(self, filepath):
         """
@@ -27,6 +36,45 @@ class GifDecoder(object):
             print self.logical_screen_descriptor
             self.read_global_color_table(f)
             print self.global_color_table
+            #  读取数据
+            while GifDecoder.identify_block(f) is not True:
+                continue
+            print self.body_data
+
+    def identify_block(self, f):
+        """
+        读取块的标识符,并调用相关的块进行处理
+        :param f: 文件读取时的迭代器
+        :return: 读取是否结束 Ture:结束, False:未结束
+        """
+        identify_byte = binascii.hexlify(f.read(1))
+        if identify_byte == '2C':
+            print "Comes Image Data Block"
+            self.body_data.append(GifDecoder.read_graphic_data(f))
+        elif self.header['Version'] == '89a' and identify_byte == '21':
+            print "Comes Extension"
+            extension_label = binascii.hexlify(f.read(1))
+            if extension_label == 'f9':
+                print "Comes Graphic Control Extension"
+                self.body_data.append(GifDecoder.read_graphic_control_extension(f))
+            elif extension_label == 'fe':
+                print "Comes Comment Extension"
+                self.body_data.append(GifDecoder.read_comment_extension(f))
+            elif extension_label == '01':
+                print "Comes Plain Text Extension"
+                self.body_data.append(GifDecoder.read_plain_text_extension(f))
+            elif extension_label == 'ff':
+                print "Comes Application Extension"
+                self.body_data.append(GifDecoder.read_application_extension(f))
+            else:
+                print "Unknown", extension_label
+                return True
+        elif identify_byte == '3b':
+            return True
+        else:
+            print "Unknown", self.header['Version'], identify_byte
+            return True
+        return False
 
     def read_head(self, f):
         """
@@ -46,13 +94,13 @@ class GifDecoder(object):
         self.logical_screen_descriptor['logical_screen_height'] = struct.unpack('H', f.read(2))[0]
         packed_fields = f.read(1)
         self.logical_screen_descriptor['global_color_table_flag'] = read_bits_value_from_bytes(
-                                                                            packed_fields, 1, 1)
+                                                                            packed_fields, 0, 1)
         self.logical_screen_descriptor['color_resolution'] = read_bits_value_from_bytes(
-                                                                            packed_fields, 2, 3)
+                                                                            packed_fields, 1, 3)
         self.logical_screen_descriptor['sort_flag'] = read_bits_value_from_bytes(
-                                                                            packed_fields, 5, 1)
+                                                                            packed_fields, 4, 1)
         self.logical_screen_descriptor['size_of_global_color_table'] = read_bits_value_from_bytes(
-                                                                            packed_fields, 6, 3)
+                                                                            packed_fields, 5, 3)
         self.logical_screen_descriptor['background_color_index'] = struct.unpack('B', f.read(1))[0]
         self.logical_screen_descriptor['pixel_aspect_ratio'] = struct.unpack('B', f.read(1))[0]
 
@@ -66,28 +114,59 @@ class GifDecoder(object):
         if self.logical_screen_descriptor['global_color_table_flag'] != 1:
             return
         length = 3 * pow(2, self.logical_screen_descriptor['size_of_global_color_table']+1)
+        print length
         for i in range(length):
             self.global_color_table.append(struct.unpack('B', f.read(1))[0])
+
+    @staticmethod
+    def read_graphic_data(f):
+        """
+        读取图像数据
+        :param f: 文件读取时的迭代器,要注意的是,在进入读取图像数据之前f已经读取了
+                Image Separator 用来判断是哪个block
+        :return: 这张图像所有信息的dict
+        """
+        res = dict()
+        # 读取Image Descriptor
+        res['image_descriptor'] = GifDecoder.read_image_descriptor(f)
+        res['local_color_table'] = GifDecoder.read_local_color_table(f, res['image_descriptor'])
+        res['table_based_image_data'] = GifDecoder.read_table_based_image_data(f)
+        return res
+
+    @staticmethod
+    def read_data_sub_block(f):
+        """
+        递归读取数据子块,直到读取到长度为0的block terminator
+        :param f: 文件读取时的迭代器
+        :return: list of data
+        """
+        size_info = struct.unpack('B', f.read(1))[0]
+        if size_info == 0:
+            return []
+        res = [f.read(1) for _ in range(size_info)]
+        res_next = GifDecoder.read_data_sub_block(f)
+        return res + res_next if res_next is not [] else res
 
     @staticmethod
     def read_image_descriptor(f):
         """
         读取图像的Image Descriptor, 每张图像有且仅有一个Image Descriptor
-        :param f: 文件读取时的迭代器
+        :param f: 文件读取时的迭代器,需要注意的是在进入读取图像数据之前f已经读取了
+                Image Separator 用来判断是哪个block
         :return: 包含属性的dict
         """
         res = dict()
-        res['image_separator'] = '{:02x}'.format(f.read(1))
+        res['image_separator'] = '2c'
         res['image_left_position'] = struct.unpack('H', f.read(2))[0]
         res['image_top_position'] = struct.unpack('H', f.read(2))[0]
         res['image_width'] = struct.unpack('H', f.read(2))[0]
         res['image_height'] = struct.unpack('H', f.read(2))[0]
         packed_fields = f.read(1)
-        res['local_color_table_flag'] = read_bits_value_from_bytes(packed_fields, 1, 1)
-        res['interlace_flag'] = read_bits_value_from_bytes(packed_fields, 2, 1)
-        res['sort_flag'] = read_bits_value_from_bytes(packed_fields, 3, 1)
-        res['reversed'] = read_bits_value_from_bytes(packed_fields, 4, 2)
-        res['size_of_local_color_table'] = read_bits_value_from_bytes(packed_fields, 6, 3)
+        res['local_color_table_flag'] = read_bits_value_from_bytes(packed_fields, 0, 1)
+        res['interlace_flag'] = read_bits_value_from_bytes(packed_fields, 1, 1)
+        res['sort_flag'] = read_bits_value_from_bytes(packed_fields, 2, 1)
+        res['reversed'] = read_bits_value_from_bytes(packed_fields, 3, 2)
+        res['size_of_local_color_table'] = read_bits_value_from_bytes(packed_fields, 5, 3)
         return res
 
     @staticmethod
@@ -107,8 +186,106 @@ class GifDecoder(object):
             local_color_datas.append(struct.unpack('B', f.read(1))[0])
         return local_color_datas
 
+    @staticmethod
+    def read_table_based_image_data(f):
+        """
+        读取图像的Table Based Image Data
+        :param f: 文件读取时的迭代器
+        :return: 包含table based image data的dict
+        """
+        res = dict()
+        res['lzw_minimum_code_size'] = struct.unpack('B', f.read(1))[0]
+        res['image_data'] = GifDecoder.read_data_sub_block(f)
+        return res
+
+    @staticmethod
+    def read_graphic_control_extension(f):
+        """
+        读取Graphic Control Extension
+        :param f: 文件读取时的迭代器,要注意的是,在进入Graphic Control Extension之前f已经读取了
+                Extension Introducer 和Graphic Control Label用来判断是哪个block
+        :return: 包含graphic control extension信息的dict
+        """
+        res = dict()
+        res['extension_introducer'] = '21'
+        res['graphic_control_label'] = 'f9'
+        res['block_size'] = struct.unpack('B', f.read(1))[0]
+        if res['block_size'] != 4:
+            raise BlockSizeException(block_name="graphic control extension", value=res['block_size'],
+                                     excepted_value=4)
+        packed_fields = f.read(1)
+        res['disposal_method'] = read_bits_value_from_bytes(packed_fields, 3, 3)
+        res['user_input_flag'] = read_bits_value_from_bytes(packed_fields, 6, 1)
+        res['transparent_color_flag'] = read_bits_value_from_bytes(packed_fields, 7, 1)
+        res['delay_time'] = struct.unpack('H', f.read(2))[0]
+        res['transparent_color_index'] = struct.unpack('B', f.read(1))[0]
+        block_terminator = binascii.hexlify(f.read(1))
+        if block_terminator != '00':
+            raise BlockTerminatorMissException()
+        return res
+
+    @staticmethod
+    def read_comment_extension(f):
+        """
+        读取comment extension
+        :param f: 文件读取时的迭代器,要注意的是,在进入Comment Extension之前f已经读取了
+                Extension Introducer 和Comment Label用来判断是哪个block
+        :return: 包含 comment extension信息的dict
+        """
+        res = dict()
+        res['extension_introducer'] = '21'
+        res['comment_label'] = 'fe'
+        res['comment_data'] = GifDecoder.read_data_sub_block(f)
+        return res
+
+    @staticmethod
+    def read_plain_text_extension(f):
+        """
+        读取Plain Text Extension
+        :param f: 文件读取时的迭代器,要注意的是,在进入Plain Text Extension之前f已经读取了
+                Extension Introducer 和Plain Text Label用来判断是哪个block
+        :return: 包含 plain text extension信息的dict
+        """
+        res = dict()
+        res['extension_introducer'] = '21'
+        res['plain_text_label'] = '01'
+        res['block_size'] = struct.unpack('B', f.read(1))[0]
+        if res['block_size'] != 12:
+            raise BlockSizeException(block_name='plain text extension', value=res['block_size'],
+                                     excepted_value=12)
+        res['text_grid_left_position'] = struct.unpack('H', f.read(2))
+        res['text_grid_top_position'] = struct.unpack('H', f.read(2))
+        res['text_grid_width'] = struct.unpack('H', f.read(2))
+        res['text_grid_height'] = struct.unpack('H', f.read(2))
+        res['character_cell_width'] = struct.unpack('B', f.read(1))
+        res['character_cell_height'] = struct.unpack('B', f.read(1))
+        res['text_foreground_color_index'] = struct.unpack('B', f.read(1))
+        res['text_background_color_index'] = struct.unpack('B', f.read(1))
+        res['plain_text_area'] = GifDecoder.read_data_sub_block(f)
+        return res
+
+    @staticmethod
+    def read_application_extension(f):
+        """
+        读取Application Extension
+        :param f: 文件读取时的迭代器,要注意的是,在进入Application Extension之前f已经读取了
+                Extension Introducer 和Application Extension Label用来判断是哪个block
+        :return: 包含Application Extension信息的dict
+        """
+        res = dict()
+        res['extension_introducer'] = '21'
+        res['application_extension_label'] = 'ff'
+        res['block_size'] = struct.unpack('B', f.read(1))[0]
+        if res['block_size'] != 11:
+            raise BlockSizeException(block_name='application extension', value=res['block_size'],
+                                     excepted_value=11)
+        res['application_identifier'] = f.read(8)
+        res['application_authentication_code'] = f.read(3)
+        res['application_data'] = GifDecoder.read_data_sub_block(f)
+        return res
+
 
 if __name__ == '__main__':
     decoder = GifDecoder()
-    gif_file = "/Users/zz/Workspace/service_gimoji_server/dock_gimojiservice/demo/output/images/1aAZXyY591YSk.gif"
+    gif_file = "data/rotate.gif"
     decoder.read_gif(gif_file)
