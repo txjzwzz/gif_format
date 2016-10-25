@@ -27,3 +27,18 @@ class BlockTerminatorMissException(Exception):
 
     def __init__(self, msg='excepted block terminator not found'):
         super(BlockTerminatorMissException, self).__init__(msg)
+
+
+class OutOfCodeTableRangeException(Exception):
+
+    def __init__(self, visit_index, current_index):
+        message= 'try to visit {}, but current length is {}'.format(visit_index, current_index-1)
+        super(OutOfCodeTableRangeException, self).__init__(message)
+
+
+class OutOfByteListRangeException(Exception):
+
+    def __init__(self, visit_index, size):
+        message= 'try to visit {}, but current size is {}'.format(visit_index, size)
+        super(OutOfByteListRangeException, self).__init__(message)
+

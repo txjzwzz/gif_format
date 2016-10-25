@@ -7,6 +7,7 @@ import struct
 import binascii
 from gif_helpers import read_bits_value_from_bytes
 from gif_exceptions import BlockSizeException, BlockTerminatorMissException
+from lzw_algorithm import lzw_decode
 
 
 class GifDecoder(object):
@@ -67,12 +68,12 @@ class GifDecoder(object):
                 self.body_data.append(GifDecoder.read_application_extension(f))
             else:
                 print "Unknown", extension_label
-                return True
+                GifDecoder.skip_unknown_block(f)
         elif identify_byte == '3b':
             return True
         else:
             print "Unknown", self.header['Version'], identify_byte
-            return True
+            GifDecoder.skip_unknown_block(f)
         return False
 
     def read_head(self, f):
@@ -198,6 +199,19 @@ class GifDecoder(object):
         return res
 
     @staticmethod
+    def skip_unknown_block(f):
+        """
+        持续读取,直到读取到block Terminator, 以此来跳过unknown的block
+        :param f: 文件读取时候的迭代器,注意,已经读取了部分作为block开头的标识
+        :return: None
+        """
+        size_info = struct.unpack('B', f.read(1))[0]
+        if size_info == 0:
+            return
+        else:
+            return GifDecoder.skip_unknown_block(f)
+
+    @staticmethod
     def read_graphic_control_extension(f):
         """
         读取Graphic Control Extension
@@ -286,8 +300,12 @@ class GifDecoder(object):
 
 if __name__ == '__main__':
     decoder = GifDecoder()
-    gif_file = "data/rotate.gif"
+    gif_file = "data/test4.gif"
     decoder.read_gif(gif_file)
+    for item_ in decoder.body_data:
+        if 'table_based_image_data' in item_:
+            lzw_decode(item_['table_based_image_data']['lzw_minimum_code_size'], item_['table_based_image_data']['image_data'])
+
     with open('output/info.txt', 'wb') as f:
         for k, v in decoder.header.iteritems():
             f.write("{} : {}\n".format(k, v))
