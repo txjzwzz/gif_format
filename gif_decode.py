@@ -8,6 +8,8 @@ import binascii
 from gif_helpers import read_bits_value_from_bytes
 from gif_exceptions import BlockSizeException, BlockTerminatorMissException
 from lzw_algorithm import lzw_decode
+from lzw_github import decompress
+import time
 
 
 class GifDecoder(object):
@@ -300,11 +302,15 @@ class GifDecoder(object):
 
 if __name__ == '__main__':
     decoder = GifDecoder()
-    gif_file = "data/test4.gif"
+    gif_file = "data/rotate.gif"
     decoder.read_gif(gif_file)
     for item_ in decoder.body_data:
         if 'table_based_image_data' in item_:
             lzw_decode(item_['table_based_image_data']['lzw_minimum_code_size'], item_['table_based_image_data']['image_data'])
+            # iter_res = decompress(''.join(item_['table_based_image_data']['image_data']), item_['table_based_image_data']['lzw_minimum_code_size'])
+            # for iter_ in iter_res:
+            #     time.sleep(0.5)
+            #     print iter_
 
     with open('output/info.txt', 'wb') as f:
         for k, v in decoder.header.iteritems():

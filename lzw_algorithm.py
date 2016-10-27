@@ -7,6 +7,7 @@ as the "standard" character set.
 @date 2016.10.22
 """
 from gif_exceptions import OutOfCodeTableRangeException, OutOfByteListRangeException
+import time
 
 
 def lzw_decode(initial_code_size, byte_str_list):
@@ -35,12 +36,12 @@ def lzw_decode(initial_code_size, byte_str_list):
     while True:
         # print res_list
         # current byte size最大为12,所以最多不过三个byte
-        print current_code_table
+        # print current_code_table
         size_left = current_code_size
         code_str = ""
         while True:
             if current_byte_index >= len(binary_list):
-                print res_list
+                # print res_list
                 raise OutOfByteListRangeException(current_byte_index, len(binary_list))
             if size_left <= current_cut_index:
                 code_str = binary_list[current_byte_index][current_cut_index-size_left:current_cut_index] + code_str
@@ -56,7 +57,8 @@ def lzw_decode(initial_code_size, byte_str_list):
                 # 进位
                 current_cut_index = 8
                 current_byte_index += 1
-        print code_str
+        print code_str, current_code_size, len(current_code_table)
+        # time.sleep(0.3)
 
         index_ = int(code_str, 2)
         if index_ == clear_code:  # reset status
@@ -64,7 +66,7 @@ def lzw_decode(initial_code_size, byte_str_list):
             clear_code = pow(2, initial_code_size)
             current_code_size = initial_code_size + 1
             current_table_index = clear_code + 2
-            front_code = None
+            front_code = ("{0:0" + str(initial_code_size) + "b}").format(0)
         elif index_ == clear_code + 1:  # end of information code
             break
         else:  # from code table
