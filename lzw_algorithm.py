@@ -57,8 +57,6 @@ def lzw_decode(initial_code_size, byte_str_list):
                 # 进位
                 current_cut_index = 8
                 current_byte_index += 1
-        print code_str, current_code_size, len(current_code_table)
-        # time.sleep(0.3)
 
         index_ = int(code_str, 2)
         if index_ == clear_code:  # reset status
@@ -66,7 +64,7 @@ def lzw_decode(initial_code_size, byte_str_list):
             clear_code = pow(2, initial_code_size)
             current_code_size = initial_code_size + 1
             current_table_index = clear_code + 2
-            front_code = ("{0:0" + str(initial_code_size) + "b}").format(0)
+            front_code = None
         elif index_ == clear_code + 1:  # end of information code
             break
         else:  # from code table
@@ -85,8 +83,7 @@ def lzw_decode(initial_code_size, byte_str_list):
                 # 处理当前的table长度满了的情况
                 if current_table_index == pow(2, current_code_size+1):
                     current_code_size += 1
-                    clear_code = pow(2, current_code_size)
-                    current_table_index = clear_code + 2
             else:  # 不存在当前的font code
                 front_code = res_list[-1]
+        print index_, current_table_index, front_code, current_code_table
 

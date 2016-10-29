@@ -42,3 +42,10 @@ class OutOfByteListRangeException(Exception):
         message= 'try to visit {}, but current size is {}'.format(visit_index, size)
         super(OutOfByteListRangeException, self).__init__(message)
 
+
+class OCODENotFindAfterInitialException(Exception):
+
+    def __init__(self):
+        message = 'OCODE must be find in table after initial'
+        super(OCODENotFindAfterInitialException, self).__init__(message)
+

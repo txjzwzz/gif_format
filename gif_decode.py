@@ -5,11 +5,14 @@
 """
 import struct
 import binascii
+from PIL import Image
+import matplotlib
+matplotlib.use('TkAgg')
+from matplotlib import pyplot as plt
+import numpy as np
 from gif_helpers import read_bits_value_from_bytes
 from gif_exceptions import BlockSizeException, BlockTerminatorMissException
-from lzw_algorithm import lzw_decode
-from lzw_github import decompress
-import time
+from lzw import decompress
 
 
 class GifDecoder(object):
@@ -43,11 +46,152 @@ class GifDecoder(object):
             while self.identify_block(f) is not True:
                 continue
 
+    def read_and_write(self, in_filepath, out_filapath):
+        """
+        读取gif,并将合法的块写入
+        :param in_filepath: 输入路径
+        :param out_filapath: 输出路径
+        :return: None
+        """
+        with open(in_filepath, 'rb') as f, open(out_filapath, 'wb') as fw:
+            # header
+            fw.write(f.read(6))
+            # logical screen descriptor
+            fw.write(f.read(4))
+            packed_fields = f.read(1)
+            golbal_color_table_flag = read_bits_value_from_bytes(packed_fields, 0, 1)
+            size_of_global_color_table = read_bits_value_from_bytes(packed_fields, 5, 3)
+            fw.write(packed_fields)
+            fw.write(f.read(2))
+            if golbal_color_table_flag == 1:  # exist global color table
+                length = 3 * pow(2, size_of_global_color_table+1)
+                print length
+                fw.write(f.read(length))
+            flag = False
+            while not flag:
+                # 判断块
+                identify_f = f.read(1)
+                identify_byte = binascii.hexlify(identify_f)
+                if identify_byte == '2c':
+                    print "Comes Image Data Block"
+                    fw.write(identify_f)
+                    self.read_write_graphic_data(f, fw)
+                elif identify_byte == '21':
+                    print "Comes Extension"
+                    extension_f = f.read(1)
+                    extension_label = binascii.hexlify(extension_f)
+                    if extension_label == 'f9':
+                        print "Comes Graphic Control Extension"
+                        fw.write(identify_f)
+                        fw.write(extension_f)
+                        self.read_write_graphic_control_extension(f, fw)
+                    elif extension_label == 'fe':
+                        print "Comes Comment Extension"
+                        fw.write(identify_f)
+                        fw.write(extension_f)
+                        self.read_write_comment_extension(f, fw)
+                    elif extension_label == '01':
+                        print "Comes Plain Text Extension"
+                        fw.write(identify_f)
+                        fw.write(extension_f)
+                        self.read_write_plain_text_extension(f, fw)
+                    elif extension_label == 'ff':
+                        print "Comes Application Extension"
+                        fw.write(identify_f)
+                        fw.write(extension_f)
+                        self.read_write_application_extension(f, fw)
+                    else:
+                        print "Unknown Extension", extension_label
+                        print "skip", GifDecoder.skip_unknown_block(f)
+                elif identify_byte == '3b':
+                    fw.write(identify_f)
+                    flag = True
+                else:
+                    print "Unknown", identify_byte
+                    print "skip", GifDecoder.skip_unknown_block(f)
+
+    def read_write_graphic_data(self, f, fw):
+        """
+        读写图像数据块
+        :param f:
+        :param fw:
+        :return:
+        """
+        fw.write(f.read(8))
+        packed_fields = f.read(1)
+        local_color_table_flag = read_bits_value_from_bytes(packed_fields, 0, 1)
+        size_of_local_color_table = read_bits_value_from_bytes(packed_fields, 5, 3)
+        fw.write(packed_fields)
+        if local_color_table_flag == 1:
+            size = 3 * pow(2, size_of_local_color_table+1)
+            fw.write(f.read(size))
+        # image data
+        fw.write(f.read(1))
+        self.read_write_sub_block(f, fw)
+
+    @staticmethod
+    def read_write_graphic_control_extension(f, fw):
+        """
+        读写Graphic Control Extension
+        :param f:
+        :param fw:
+        :return:
+        """
+        fw.write(f.read(6))
+
+    def read_write_comment_extension(self, f, fw):
+        """
+        读写comment extension
+        :param f:
+        :param fw:
+        :return:
+        """
+        self.read_write_sub_block(f, fw)
+
+    def read_write_plain_text_extension(self, f, fw):
+        """
+        赌侠Plain Text Extension
+        :param f:
+        :param fw:
+        :return:
+        """
+        fw.write(f.read(13))
+        self.read_write_sub_block(f, fw)
+
+    def read_write_application_extension(self, f, fw):
+        """
+        读写Application Extension
+        :param f:
+        :param fw:
+        :return:
+        """
+        fw.write(f.read(12))
+        self.read_write_sub_block(f, fw)
+
+
+
+    @staticmethod
+    def read_write_sub_block(f, fw):
+        """
+        f read the block, fw write the block
+        :param f: 文件读取时候的迭代器,注意read_write_subblock,已经读取了部分作为block开头的标识
+        :param fw: 文件写入的迭代器
+        :return: None
+        """
+        read_byte = f.read(1)
+        fw.write(read_byte)
+        size_info = struct.unpack('B', read_byte)[0]
+        if size_info == 0:
+            return
+        else:
+            fw.write(f.read(size_info))
+            return GifDecoder.read_write_sub_block(f, fw)
+
     def identify_block(self, f):
         """
         读取块的标识符,并调用相关的块进行处理
         :param f: 文件读取时的迭代器
-        :return: 读取是否结束 Ture:结束, False:未结束
+        :return: 读取是否结束 True:结束, False:未结束
         """
         identify_byte = binascii.hexlify(f.read(1))
         if identify_byte == '2c':
@@ -70,12 +214,12 @@ class GifDecoder(object):
                 self.body_data.append(GifDecoder.read_application_extension(f))
             else:
                 print "Unknown", extension_label
-                GifDecoder.skip_unknown_block(f)
+                print "skip", GifDecoder.skip_unknown_block(f)
         elif identify_byte == '3b':
             return True
         else:
             print "Unknown", self.header['Version'], identify_byte
-            GifDecoder.skip_unknown_block(f)
+            print "skip", GifDecoder.skip_unknown_block(f)
         return False
 
     def read_head(self, f):
@@ -209,9 +353,9 @@ class GifDecoder(object):
         """
         size_info = struct.unpack('B', f.read(1))[0]
         if size_info == 0:
-            return
+            return 1
         else:
-            return GifDecoder.skip_unknown_block(f)
+            return GifDecoder.skip_unknown_block(f) + 1
 
     @staticmethod
     def read_graphic_control_extension(f):
@@ -299,32 +443,49 @@ class GifDecoder(object):
         res['application_data'] = GifDecoder.read_data_sub_block(f)
         return res
 
-
+import time
 if __name__ == '__main__':
     decoder = GifDecoder()
-    gif_file = "data/rotate.gif"
-    decoder.read_gif(gif_file)
-    for item_ in decoder.body_data:
-        if 'table_based_image_data' in item_:
-            lzw_decode(item_['table_based_image_data']['lzw_minimum_code_size'], item_['table_based_image_data']['image_data'])
-            # iter_res = decompress(''.join(item_['table_based_image_data']['image_data']), item_['table_based_image_data']['lzw_minimum_code_size'])
-            # for iter_ in iter_res:
-            #     time.sleep(0.5)
-            #     print iter_
-
-    with open('output/info.txt', 'wb') as f:
-        for k, v in decoder.header.iteritems():
-            f.write("{} : {}\n".format(k, v))
-        for k, v in decoder.logical_screen_descriptor.iteritems():
-            f.write("{} : {}\n".format(k, v))
-        for index_, k in enumerate(decoder.global_color_table):
-            if index_ % 3 == 0:
-                f.write("red: {}\n".format(k))
-            elif index_ % 3 == 1:
-                f.write("green: {}\n".format(k))
-            else:
-                f.write("blue: {}\n".format(k))
-        for item_ in decoder.body_data:
-            for k, v in item_.iteritems():
-                f.write("{} : {}\n".format(k, v))
+    gif_file = "data/test3.gif"
+    # decoder.read_gif(gif_file)
+    # print decoder.header
+    # print decoder.logical_screen_descriptor
+    decoder.read_and_write('data/rotate.gif', 'data/try_not_rotate.gif')
+    # for item_ in decoder.body_data:
+    #     if 'local_color_table' in item_ and len(item_['local_color_table'])>0:
+    #         current_color_table = item_['local_color_table']
+    #     else:
+    #         current_color_table = decoder.global_color_table
+    #     if 'table_based_image_data' in item_:
+    #         width = item_['image_descriptor']['image_width']
+    #         height = item_['image_descriptor']['image_height']
+    #
+    #         im = Image.new('RGB', (width, height))
+    #         pixels = im.load()
+    #         iter_res = decompress(item_['table_based_image_data']['lzw_minimum_code_size'], ''.join(item_['table_based_image_data']['image_data']))
+    #         decompress_res = ''.join([iter_ for iter_ in iter_res])
+    #         for i in xrange(im.size[1]):
+    #             for j in xrange(im.size[0]):
+    #                 # print i, j, i*im.size[0]+j, im.size[0], im.size[1]
+    #                 index_ = struct.unpack('B', decompress_res[i*im.size[0]+j])[0]
+    #                 # print i, j, index_, len(current_color_table), current_color_table[index_*3], current_color_table[index_*3+1], current_color_table[index_*3+2]
+    #                 pixels[j, i] = (current_color_table[index_*3], current_color_table[index_*3+1], current_color_table[index_*3+2])
+    #         im.show()
+    #         time.sleep(1)
+    #
+    # with open('output/info.txt', 'wb') as f:
+    #     for k, v in decoder.header.iteritems():
+    #         f.write("{} : {}\n".format(k, v))
+    #     for k, v in decoder.logical_screen_descriptor.iteritems():
+    #         f.write("{} : {}\n".format(k, v))
+    #     for index_, k in enumerate(decoder.global_color_table):
+    #         if index_ % 3 == 0:
+    #             f.write("red: {}\n".format(k))
+    #         elif index_ % 3 == 1:
+    #             f.write("green: {}\n".format(k))
+    #         else:
+    #             f.write("blue: {}\n".format(k))
+    #     for item_ in decoder.body_data:
+    #         for k, v in item_.iteritems():
+    #             f.write("{} : {}\n".format(k, v))
 
