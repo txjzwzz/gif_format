@@ -36,7 +36,7 @@ class DecompressHelper(object):
         self.table[self.next_code] = string_str
         self.next_code += 1
 
-import time
+
 def decompress(lzw_minimum_code_size, media_data, max_code_size=12):
     """
     解压缩
@@ -51,7 +51,6 @@ def decompress(lzw_minimum_code_size, media_data, max_code_size=12):
     OCODE = None
     current_idnex = 0
     while True:
-        # print codes[current_idnex:current_idnex + dh.next_code_size].to01()[::-1]
         code = int(codes[current_idnex:current_idnex + dh.next_code_size].to01()[::-1], 2)
         current_idnex += dh.next_code_size
         if code == dh.clear_code:

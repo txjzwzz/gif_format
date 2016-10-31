@@ -37,155 +37,11 @@ class GifDecoder(object):
         """
         with open(filepath, 'rb') as f:
             self.read_head(f)
-            print self.header
             self.read_logical_screen_descriptor(f)
-            print self.logical_screen_descriptor
             self.read_global_color_table(f)
-            print self.global_color_table
             #  读取数据
             while self.identify_block(f) is not True:
                 continue
-
-    def read_and_write(self, in_filepath, out_filapath):
-        """
-        读取gif,并将合法的块写入
-        :param in_filepath: 输入路径
-        :param out_filapath: 输出路径
-        :return: None
-        """
-        with open(in_filepath, 'rb') as f, open(out_filapath, 'wb') as fw:
-            # header
-            fw.write(f.read(6))
-            # logical screen descriptor
-            fw.write(f.read(4))
-            packed_fields = f.read(1)
-            golbal_color_table_flag = read_bits_value_from_bytes(packed_fields, 0, 1)
-            size_of_global_color_table = read_bits_value_from_bytes(packed_fields, 5, 3)
-            fw.write(packed_fields)
-            fw.write(f.read(2))
-            if golbal_color_table_flag == 1:  # exist global color table
-                length = 3 * pow(2, size_of_global_color_table+1)
-                print length
-                fw.write(f.read(length))
-            flag = False
-            while not flag:
-                # 判断块
-                identify_f = f.read(1)
-                identify_byte = binascii.hexlify(identify_f)
-                if identify_byte == '2c':
-                    print "Comes Image Data Block"
-                    fw.write(identify_f)
-                    self.read_write_graphic_data(f, fw)
-                elif identify_byte == '21':
-                    print "Comes Extension"
-                    extension_f = f.read(1)
-                    extension_label = binascii.hexlify(extension_f)
-                    if extension_label == 'f9':
-                        print "Comes Graphic Control Extension"
-                        fw.write(identify_f)
-                        fw.write(extension_f)
-                        self.read_write_graphic_control_extension(f, fw)
-                    elif extension_label == 'fe':
-                        print "Comes Comment Extension"
-                        fw.write(identify_f)
-                        fw.write(extension_f)
-                        self.read_write_comment_extension(f, fw)
-                    elif extension_label == '01':
-                        print "Comes Plain Text Extension"
-                        fw.write(identify_f)
-                        fw.write(extension_f)
-                        self.read_write_plain_text_extension(f, fw)
-                    elif extension_label == 'ff':
-                        print "Comes Application Extension"
-                        fw.write(identify_f)
-                        fw.write(extension_f)
-                        self.read_write_application_extension(f, fw)
-                    else:
-                        print "Unknown Extension", extension_label
-                        print "skip", GifDecoder.skip_unknown_block(f)
-                elif identify_byte == '3b':
-                    fw.write(identify_f)
-                    flag = True
-                else:
-                    print "Unknown", identify_byte
-                    print "skip", GifDecoder.skip_unknown_block(f)
-
-    def read_write_graphic_data(self, f, fw):
-        """
-        读写图像数据块
-        :param f:
-        :param fw:
-        :return:
-        """
-        fw.write(f.read(8))
-        packed_fields = f.read(1)
-        local_color_table_flag = read_bits_value_from_bytes(packed_fields, 0, 1)
-        size_of_local_color_table = read_bits_value_from_bytes(packed_fields, 5, 3)
-        fw.write(packed_fields)
-        if local_color_table_flag == 1:
-            size = 3 * pow(2, size_of_local_color_table+1)
-            fw.write(f.read(size))
-        # image data
-        fw.write(f.read(1))
-        self.read_write_sub_block(f, fw)
-
-    @staticmethod
-    def read_write_graphic_control_extension(f, fw):
-        """
-        读写Graphic Control Extension
-        :param f:
-        :param fw:
-        :return:
-        """
-        fw.write(f.read(6))
-
-    def read_write_comment_extension(self, f, fw):
-        """
-        读写comment extension
-        :param f:
-        :param fw:
-        :return:
-        """
-        self.read_write_sub_block(f, fw)
-
-    def read_write_plain_text_extension(self, f, fw):
-        """
-        赌侠Plain Text Extension
-        :param f:
-        :param fw:
-        :return:
-        """
-        fw.write(f.read(13))
-        self.read_write_sub_block(f, fw)
-
-    def read_write_application_extension(self, f, fw):
-        """
-        读写Application Extension
-        :param f:
-        :param fw:
-        :return:
-        """
-        fw.write(f.read(12))
-        self.read_write_sub_block(f, fw)
-
-
-
-    @staticmethod
-    def read_write_sub_block(f, fw):
-        """
-        f read the block, fw write the block
-        :param f: 文件读取时候的迭代器,注意read_write_subblock,已经读取了部分作为block开头的标识
-        :param fw: 文件写入的迭代器
-        :return: None
-        """
-        read_byte = f.read(1)
-        fw.write(read_byte)
-        size_info = struct.unpack('B', read_byte)[0]
-        if size_info == 0:
-            return
-        else:
-            fw.write(f.read(size_info))
-            return GifDecoder.read_write_sub_block(f, fw)
 
     def identify_block(self, f):
         """
@@ -195,22 +51,16 @@ class GifDecoder(object):
         """
         identify_byte = binascii.hexlify(f.read(1))
         if identify_byte == '2c':
-            print "Comes Image Data Block"
             self.body_data.append(GifDecoder.read_graphic_data(f))
         elif self.header['Version'] == '89a' and identify_byte == '21':
-            print "Comes Extension"
             extension_label = binascii.hexlify(f.read(1))
             if extension_label == 'f9':
-                print "Comes Graphic Control Extension"
                 self.body_data.append(GifDecoder.read_graphic_control_extension(f))
             elif extension_label == 'fe':
-                print "Comes Comment Extension"
                 self.body_data.append(GifDecoder.read_comment_extension(f))
             elif extension_label == '01':
-                print "Comes Plain Text Extension"
                 self.body_data.append(GifDecoder.read_plain_text_extension(f))
             elif extension_label == 'ff':
-                print "Comes Application Extension"
                 self.body_data.append(GifDecoder.read_application_extension(f))
             else:
                 print "Unknown", extension_label
@@ -260,7 +110,6 @@ class GifDecoder(object):
         if self.logical_screen_descriptor['global_color_table_flag'] != 1:
             return
         length = 3 * pow(2, self.logical_screen_descriptor['size_of_global_color_table']+1)
-        print length
         for i in range(length):
             self.global_color_table.append(struct.unpack('B', f.read(1))[0])
 
@@ -438,8 +287,8 @@ class GifDecoder(object):
         if res['block_size'] != 11:
             raise BlockSizeException(block_name='application extension', value=res['block_size'],
                                      excepted_value=11)
-        res['application_identifier'] = f.read(8)
-        res['application_authentication_code'] = f.read(3)
+        res['application_identifier'] = [f.read(1) for _ in xrange(8)]
+        res['application_authentication_code'] = [f.read(1) for _ in xrange(3)]
         res['application_data'] = GifDecoder.read_data_sub_block(f)
         return res
 
