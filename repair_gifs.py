@@ -45,6 +45,23 @@ def check_and_modify_netscape_looping_application_extension(application_identifi
     return True
 
 
+def diagnosis_gif(input_file_path):
+    """
+    诊断gif是否合法
+    :param input_file_path:
+    :return: legal: True, illegal: False
+    """
+    decoder = GifDecoder()
+    decoder.read_gif(input_file_path)
+    for item_ in decoder.body_data:
+        if 'extension_introducer' in item_ and 'application_extension_label' in item_:
+            if check_and_modify_netscape_looping_application_extension(item_['application_identifier'],
+                                                                       item_['application_authentication_code'],
+                                                                       item_['application_data']):
+                return True
+    return False
+
+
 def repair_file(input_file_path, output_file_path):
     """
     修复input文件
@@ -121,6 +138,26 @@ def repair_file(input_file_path, output_file_path):
         GifEncoder.write_trailer(f)
 
 
+def find_not_rotate_gif_under_directory(directory_path):
+    """
+    查找文件夹下不循环的gif图
+    :param directory_path: 文件夹路径
+    :return: list of not rotate gif
+    """
+    files = [f for f in listdir(directory_path) if f.endswith('.gif') and isfile(join(directory_path, f))]
+    res, count = [], 0
+    for file_ in files:
+        count += 1
+        print 'check {} gif, name is {}'.format(count, file_)
+        try:
+            if not diagnosis_gif(join(directory_path, file_)):
+                res.append(file_)
+        except Exception as e:
+            print "********error********** {} ********error**********".format(file_)
+            print e.message
+    return res
+
+
 def repair_file_under_directory(directory_path):
     """
     修复文件夹下的gif文件
@@ -129,8 +166,13 @@ def repair_file_under_directory(directory_path):
     """
     files = [f for f in listdir(directory_path) if f.endswith('.gif') and isfile(join(directory_path, f))]
     for file_ in files:
-        repair_file(join(directory_path, file_), join(directory_path, 'repair_'+file_))
+        try:
+            if not diagnosis_gif(join(directory_path, file_)):
+                repair_file(join(directory_path, file_), join(directory_path, 'repair_'+file_))
+        except Exception as e:
+            print "********error********** {} ********error**********".format(file_)
+            print e.message
 
 
 if __name__ == '__main__':
-    repair_file_under_directory('data')
+    print find_not_rotate_gif_under_directory('data')
