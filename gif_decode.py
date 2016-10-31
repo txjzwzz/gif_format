@@ -5,11 +5,6 @@
 """
 import struct
 import binascii
-from PIL import Image
-import matplotlib
-matplotlib.use('TkAgg')
-from matplotlib import pyplot as plt
-import numpy as np
 from gif_helpers import read_bits_value_from_bytes
 from gif_exceptions import BlockSizeException, BlockTerminatorMissException
 from lzw import decompress

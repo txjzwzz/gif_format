@@ -106,7 +106,7 @@ def compress(data, lzw_min, max_code_size=12):
         codes.extend(bin(code)[2:].rjust(table.code_size, '0')[::-1])
     return codes.tobytes()
 
-import time
+
 def decompress(data, lzw_min, max_code_size=12):
     """Generate decompressed data using LZW."""
     table = LZWDecompressionTable(lzw_min)
