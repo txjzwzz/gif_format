@@ -47,7 +47,7 @@ class GifDecoder(object):
         identify_byte = binascii.hexlify(f.read(1))
         if identify_byte == '2c':
             self.body_data.append(GifDecoder.read_graphic_data(f))
-        elif self.header['Version'] == '89a' and identify_byte == '21':
+        elif identify_byte == '21':
             extension_label = binascii.hexlify(f.read(1))
             if extension_label == 'f9':
                 self.body_data.append(GifDecoder.read_graphic_control_extension(f))

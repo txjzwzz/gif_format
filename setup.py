@@ -7,9 +7,7 @@ __version__ = '.'.join(map(str, version_info))
 
 install_requires = [
     'bitarray',
-    'pillow',
-    'numpy',
-    'matplotlib'
+    'commandr',
 ]
 
 if sys.version_info < (2, 7):

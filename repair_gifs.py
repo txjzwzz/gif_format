@@ -7,15 +7,15 @@
 import binascii
 from os import listdir
 from os.path import isfile, join
+from commandr import command, Run
 from gif_decode import GifDecoder
 from gif_encode import GifEncoder
 
 
-def check_and_modify_netscape_looping_application_extension(application_identifier, application_authentication_code,
+def check_netscape_looping_application_extension(application_identifier, application_authentication_code,
                                                  application_data):
     """
     检查Application Extension是否为Netscape Looping Application Extension
-    如果为Netscape Looping Application Extension但是loop count不是0(无限循环),则将其修改为0
     :param application_identifier: Application Identifier 8 bytes
     :param application_authentication_code: Application Authentication Code 3 bytes
     :param application_data: Application Data
@@ -37,11 +37,6 @@ def check_and_modify_netscape_looping_application_extension(application_identifi
     start_index += 1
     if binascii.hexlify(application_data[0]) != netscape_loop_list[start_index]:
         return False
-    # 如果不是无限循环,则进行修复
-    if binascii.hexlify(application_data[1]) != '00':
-        application_data[1] = binascii.unhexlify('00')
-    if binascii.hexlify(application_data[2]) != '00':
-        application_data[2] = binascii.unhexlify('00')
     return True
 
 
@@ -55,7 +50,7 @@ def diagnosis_gif(input_file_path):
     decoder.read_gif(input_file_path)
     for item_ in decoder.body_data:
         if 'extension_introducer' in item_ and 'application_extension_label' in item_:
-            if check_and_modify_netscape_looping_application_extension(item_['application_identifier'],
+            if check_netscape_looping_application_extension(item_['application_identifier'],
                                                                        item_['application_authentication_code'],
                                                                        item_['application_data']):
                 return True
@@ -74,7 +69,7 @@ def repair_file(input_file_path, output_file_path):
     flag = False
     for item_ in decoder.body_data:
         if 'extension_introducer' in item_ and 'application_extension_label' in item_:
-            if check_and_modify_netscape_looping_application_extension(item_['application_identifier'],
+            if check_netscape_looping_application_extension(item_['application_identifier'],
                                                                        item_['application_authentication_code'],
                                                                        item_['application_data']):
                 flag = True
@@ -138,6 +133,7 @@ def repair_file(input_file_path, output_file_path):
         GifEncoder.write_trailer(f)
 
 
+@command('find')
 def find_not_rotate_gif_under_directory(directory_path):
     """
     查找文件夹下不循环的gif图
@@ -158,6 +154,7 @@ def find_not_rotate_gif_under_directory(directory_path):
     return res
 
 
+@command('repair')
 def repair_file_under_directory(directory_path):
     """
     修复文件夹下的gif文件
@@ -175,4 +172,4 @@ def repair_file_under_directory(directory_path):
 
 
 if __name__ == '__main__':
-    print find_not_rotate_gif_under_directory('data')
+    Run()
