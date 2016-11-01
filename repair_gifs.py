@@ -155,17 +155,19 @@ def find_not_rotate_gif_under_directory(directory_path):
 
 
 @command('repair')
-def repair_file_under_directory(directory_path):
+def repair_file_under_directory(directory_path, prefix=None):
     """
     修复文件夹下的gif文件
     :param directory_path: 文件夹路径
+    :param prefix: 修改后图像前缀,None为覆盖
     :return: None
     """
     files = [f for f in listdir(directory_path) if f.endswith('.gif') and isfile(join(directory_path, f))]
     for file_ in files:
         try:
             if not diagnosis_gif(join(directory_path, file_)):
-                repair_file(join(directory_path, file_), join(directory_path, 'repair_'+file_))
+                repaired_name = prefix+file_ if prefix else file_
+                repair_file(join(directory_path, file_), join(directory_path, repaired_name))
         except Exception as e:
             print "********error********** {} ********error**********".format(file_)
             print e.message
