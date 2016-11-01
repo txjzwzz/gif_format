@@ -47,7 +47,10 @@ def diagnosis_gif(input_file_path):
     :return: legal: True, illegal: False
     """
     decoder = GifDecoder()
-    decoder.read_gif(input_file_path)
+    is_gif = decoder.read_gif(input_file_path)
+    if not is_gif:
+        print "input_file {} is not gif".format(input_file_path)
+        return False
     for item_ in decoder.body_data:
         if 'extension_introducer' in item_ and 'application_extension_label' in item_:
             if check_netscape_looping_application_extension(item_['application_identifier'],
@@ -65,7 +68,10 @@ def repair_file(input_file_path, output_file_path):
     :return: None
     """
     decoder = GifDecoder()
-    decoder.read_gif(input_file_path)
+    is_gif = decoder.read_gif(input_file_path)
+    if not is_gif:
+        print "input_file {} is not gif".format(input_file_path)
+        return
     flag = False
     for item_ in decoder.body_data:
         if 'extension_introducer' in item_ and 'application_extension_label' in item_:

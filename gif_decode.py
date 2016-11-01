@@ -28,15 +28,18 @@ class GifDecoder(object):
         """
         读取gif
         :param filepath: gif文件路径
-        :return:
+        :return: 为gif图True/不是gif图False
         """
         with open(filepath, 'rb') as f:
             self.read_head(f)
+            if self.header['Signature'] != 'GIF':
+                return False
             self.read_logical_screen_descriptor(f)
             self.read_global_color_table(f)
             #  读取数据
             while self.identify_block(f) is not True:
                 continue
+        return True
 
     def identify_block(self, f):
         """
