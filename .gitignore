@@ -2,5 +2,6 @@
 env/
 data/
 output/
+result/
 *.pyc
 .DS_Store
