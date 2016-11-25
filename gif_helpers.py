@@ -7,9 +7,9 @@
 from gif_exceptions import ByteRangeException, OutOfBitLengthValueException, BitNumberOfByteException
 
 
-def read_bits_value_from_bytes(byte_, start_index, length):
+def read_bits_value_from_byte(byte_, start_index, length):
     """
-    从byte中读取某几位bit的数值, 注意这个是按照从最小位到最大位的顺序,也就是 76543210这样的顺序
+    从byte中读取某几位bit的数值, 注意顺序,也就是 76543210这样的顺序
     :param byte_: 待读取的byte
     :param start_index: 开始的索引下标
     :param length: 读取的长度
@@ -24,9 +24,9 @@ def read_bits_value_from_bytes(byte_, start_index, length):
     return val_
 
 
-def write_bits_value_to_bytes(value_length_tuple_list):
+def write_bits_value_to_byte(value_length_tuple_list):
     """
-    写value到byte_中的start_index到length位数
+    将bit序列写入到byte中,所有的bit长度加起来应该为8,并且按照从左到右的顺序排列好
     :param value_length_tuple_list: list of (value, length) tuple
     :return: byte
     """

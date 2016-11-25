@@ -2,21 +2,24 @@
 """
 @author wei.zheng
 @date 2016.10.19
+注意:f.read()即使读完了文件继续f.read()也不会报错,只是会返回'',要注意这样的情况发生
+数据编解码的格式:
+    f.read()得到的为str,在Python中本质就是bytes
 """
 import struct
 import binascii
-from gif_helpers import read_bits_value_from_bytes
+from gif_helpers import read_bits_value_from_byte
 from gif_exceptions import BlockSizeException, BlockTerminatorMissException
-from lzw import decompress
 
 
 class GifDecoder(object):
 
-    _IMAGE_DATA_BLOCK = 1
-    _GRAPHIC_CONTROL_EXTENSION = 2
-    _COMMENT_EXTENSION = 3
-    _PLAIN_TEXT_EXTENSION = 4
-    _APPLICATION_EXTENSION = 5
+    _SECCESS = 'read gif success'
+    _HEADER_ERROR = 'read header error'
+    _LOGIC_SCREEN_DESCRIPTION_ERROR = 'read logic screen description error'
+    _GLOBAL_COLOR_TABLE_ERROR = 'read global color table error'
+    _EXTENSION_Label_EMPTY = 'read extension label is empty string'
+    _IDENTIFY_BYET
 
     def __init__(self):
         self.header = dict()
@@ -28,18 +31,21 @@ class GifDecoder(object):
         """
         读取gif
         :param filepath: gif文件路径
-        :return: 为gif图True/不是gif图False
+            读取时候的存在Color Table中间的数值都是数字
+        :return: 为gif图True/不是gif图或者文件读取出现错误False, 'Message'
         """
         with open(filepath, 'rb') as f:
             self.read_head(f)
             if self.header['Signature'] != 'GIF':
-                return False
-            self.read_logical_screen_descriptor(f)
-            self.read_global_color_table(f)
+                return False, self._HEADER_ERROR
+            if not self.read_logical_screen_descriptor(f):
+                return False, self._LOGIC_SCREEN_DESCRIPTION_ERROR
+            if not self.read_global_color_table(f):
+                return False, self._GLOBAL_COLOR_TABLE_ERROR
             #  读取数据
             while self.identify_block(f) is not True:
                 continue
-        return True
+        return True, self._SECCESS
 
     def identify_block(self, f):
         """
@@ -49,21 +55,23 @@ class GifDecoder(object):
         """
         identify_byte = binascii.hexlify(f.read(1))
         if identify_byte == '2c':
-            self.body_data.append(GifDecoder.read_graphic_data(f))
+            self.body_data.append(self.read_graphic_data(f))
         elif identify_byte == '21':
             extension_label = binascii.hexlify(f.read(1))
             if extension_label == 'f9':
-                self.body_data.append(GifDecoder.read_graphic_control_extension(f))
+                self.body_data.append(self.read_graphic_control_extension(f))
             elif extension_label == 'fe':
-                self.body_data.append(GifDecoder.read_comment_extension(f))
+                self.body_data.append(self.read_comment_extension(f))
             elif extension_label == '01':
-                self.body_data.append(GifDecoder.read_plain_text_extension(f))
+                self.body_data.append(self.read_plain_text_extension(f))
             elif extension_label == 'ff':
-                self.body_data.append(GifDecoder.read_application_extension(f))
+                self.body_data.append(self.read_application_extension(f))
+            elif extension_label == '':
+                return False, self._EXTENSION_Label_EMPTY
             else:
                 print "Unknown", extension_label
                 print "skip", GifDecoder.skip_unknown_block(f)
-        elif identify_byte == '3b':
+        elif identify_byte == '3b' or identify_byte == '':  # 如果为''代表文件读完了
             return True
         else:
             print "Unknown", self.header['Version'], identify_byte
@@ -82,34 +90,42 @@ class GifDecoder(object):
         """
         读取gif的Logical Screen Descriptor
         :param f: 文件读取时的迭代器
-        :return:
+        :return: 成功读取 True/False 读取失败
         """
-        self.logical_screen_descriptor['logical_screen_width'] = struct.unpack('H', f.read(2))[0]
-        self.logical_screen_descriptor['logical_screen_height'] = struct.unpack('H', f.read(2))[0]
-        packed_fields = f.read(1)
-        self.logical_screen_descriptor['global_color_table_flag'] = read_bits_value_from_bytes(
+        block_bytes = f.read(7)
+        if len(block_bytes) < 7:  # 读取超出文件范围了
+            return False
+        self.logical_screen_descriptor['logical_screen_width'] = struct.unpack('H', block_bytes[0:2])[0]
+        self.logical_screen_descriptor['logical_screen_height'] = struct.unpack('H', block_bytes[2:4])[0]
+        packed_fields = block_bytes[4:5]
+        self.logical_screen_descriptor['global_color_table_flag'] = read_bits_value_from_byte(
                                                                             packed_fields, 0, 1)
-        self.logical_screen_descriptor['color_resolution'] = read_bits_value_from_bytes(
+        self.logical_screen_descriptor['color_resolution'] = read_bits_value_from_byte(
                                                                             packed_fields, 1, 3)
-        self.logical_screen_descriptor['sort_flag'] = read_bits_value_from_bytes(
+        self.logical_screen_descriptor['sort_flag'] = read_bits_value_from_byte(
                                                                             packed_fields, 4, 1)
-        self.logical_screen_descriptor['size_of_global_color_table'] = read_bits_value_from_bytes(
+        self.logical_screen_descriptor['size_of_global_color_table'] = read_bits_value_from_byte(
                                                                             packed_fields, 5, 3)
-        self.logical_screen_descriptor['background_color_index'] = struct.unpack('B', f.read(1))[0]
-        self.logical_screen_descriptor['pixel_aspect_ratio'] = struct.unpack('B', f.read(1))[0]
+        self.logical_screen_descriptor['background_color_index'] = struct.unpack('B', block_bytes[5:6])[0]
+        self.logical_screen_descriptor['pixel_aspect_ratio'] = struct.unpack('B', block_bytes[6:7])[0]
+        return True
 
     def read_global_color_table(self, f):
         """
         读取图像的Global Color Table,数据流只有一块
         :param f: 文件读取时的迭代器
-        :return:
+        :return: True 正确读取/ False 读取出现错误
         """
         # 判断该字段是否存在
         if self.logical_screen_descriptor['global_color_table_flag'] != 1:
-            return
+            return True
         length = 3 * pow(2, self.logical_screen_descriptor['size_of_global_color_table']+1)
-        for i in range(length):
-            self.global_color_table.append(struct.unpack('B', f.read(1))[0])
+        block_bytes = f.read(length)
+        if len(block_bytes) < length:  # 读取超出文件范围了
+            return False
+        for i in xrange(length):
+            self.global_color_table.append(struct.unpack('B', block_bytes[i:i+1])[0])
+        return True
 
     @staticmethod
     def read_graphic_data(f):
@@ -155,11 +171,11 @@ class GifDecoder(object):
         res['image_width'] = struct.unpack('H', f.read(2))[0]
         res['image_height'] = struct.unpack('H', f.read(2))[0]
         packed_fields = f.read(1)
-        res['local_color_table_flag'] = read_bits_value_from_bytes(packed_fields, 0, 1)
-        res['interlace_flag'] = read_bits_value_from_bytes(packed_fields, 1, 1)
-        res['sort_flag'] = read_bits_value_from_bytes(packed_fields, 2, 1)
-        res['reversed'] = read_bits_value_from_bytes(packed_fields, 3, 2)
-        res['size_of_local_color_table'] = read_bits_value_from_bytes(packed_fields, 5, 3)
+        res['local_color_table_flag'] = read_bits_value_from_byte(packed_fields, 0, 1)
+        res['interlace_flag'] = read_bits_value_from_byte(packed_fields, 1, 1)
+        res['sort_flag'] = read_bits_value_from_byte(packed_fields, 2, 1)
+        res['reversed'] = read_bits_value_from_byte(packed_fields, 3, 2)
+        res['size_of_local_color_table'] = read_bits_value_from_byte(packed_fields, 5, 3)
         return res
 
     @staticmethod
@@ -220,9 +236,9 @@ class GifDecoder(object):
             raise BlockSizeException(block_name="graphic control extension", value=res['block_size'],
                                      excepted_value=4)
         packed_fields = f.read(1)
-        res['disposal_method'] = read_bits_value_from_bytes(packed_fields, 3, 3)
-        res['user_input_flag'] = read_bits_value_from_bytes(packed_fields, 6, 1)
-        res['transparent_color_flag'] = read_bits_value_from_bytes(packed_fields, 7, 1)
+        res['disposal_method'] = read_bits_value_from_byte(packed_fields, 3, 3)
+        res['user_input_flag'] = read_bits_value_from_byte(packed_fields, 6, 1)
+        res['transparent_color_flag'] = read_bits_value_from_byte(packed_fields, 7, 1)
         res['delay_time'] = struct.unpack('H', f.read(2))[0]
         res['transparent_color_index'] = struct.unpack('B', f.read(1))[0]
         block_terminator = binascii.hexlify(f.read(1))

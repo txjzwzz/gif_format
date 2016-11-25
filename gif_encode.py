@@ -5,7 +5,7 @@
 """
 import struct
 import binascii
-from gif_helpers import write_bits_value_to_bytes
+from gif_helpers import write_bits_value_to_byte
 from gif_exceptions import ColorTableSizeException, ApplicationIdentifierLengthException, \
                            ApplicationAuthenticationCodeLengthException
 
@@ -47,7 +47,7 @@ class GifEncoder(object):
         :return: None
         """
         fw.write(struct.pack('HH', logical_screen_width, logical_screen_height))
-        byte_ = write_bits_value_to_bytes([(global_color_table_flag, 1),
+        byte_ = write_bits_value_to_byte([(global_color_table_flag, 1),
                                            (color_resolution, 3),
                                            (sort_flag, 1),
                                            (size_of_global_color_table, 3)])
@@ -87,7 +87,7 @@ class GifEncoder(object):
         # write image separator
         fw.write(binascii.unhexlify('2c'))
         fw.write(struct.pack('HHHH', image_left_position, image_top_position, image_width, image_height))
-        byte_ = write_bits_value_to_bytes([(local_color_table_flag, 1),
+        byte_ = write_bits_value_to_byte([(local_color_table_flag, 1),
                                            (interlace_flag, 1),
                                            (sort_flag, 1),
                                            (0, 2),  # reserved
@@ -123,7 +123,7 @@ class GifEncoder(object):
         fw.write(binascii.unhexlify('21'))  # extension introducer
         fw.write(binascii.unhexlify('f9'))  # graphic control label
         fw.write(chr(4))  # block size is fixed value 4
-        byte_ = write_bits_value_to_bytes([(0, 3),  # reserved
+        byte_ = write_bits_value_to_byte([(0, 3),  # reserved
                                            (disposal_method, 3),
                                            (user_input_flag, 1),
                                            (transparent_color_flag, 1)])
