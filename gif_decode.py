@@ -15,11 +15,17 @@ from gif_exceptions import BlockSizeException, BlockTerminatorMissException
 class GifDecoder(object):
 
     _SECCESS = 'read gif success'
+    _READ_END_SUCCESS = 'read to gif tailer'
+    _GRAPHIC_DATA_SUCCESS = 'read graphic data success'
+    _BLOCK_SUCCESS = 'read block success'
     _HEADER_ERROR = 'read header error'
-    _LOGIC_SCREEN_DESCRIPTION_ERROR = 'read logic screen description error'
-    _GLOBAL_COLOR_TABLE_ERROR = 'read global color table error'
+    _LOGIC_SCREEN_DESCRIPTION_EOF = 'read logic screen description end of file'
+    _GLOBAL_COLOR_TABLE_EOF = 'read global color table end of file'
+    _IMAGE_DESCRIPTOR_EOF = 'read image descriptor end of file'
+    _LOCAL_COLOR_TABLE_EOF = 'read local color table end of file'
+    _IMAGE_DATA_EOF = 'read image data end of file'
     _EXTENSION_Label_EMPTY = 'read extension label is empty string'
-    _IDENTIFY_BYET
+    _IDENTIFY_BYTE_EMPTY = 'identify byte is empty'
 
     def __init__(self):
         self.header = dict()
@@ -39,9 +45,9 @@ class GifDecoder(object):
             if self.header['Signature'] != 'GIF':
                 return False, self._HEADER_ERROR
             if not self.read_logical_screen_descriptor(f):
-                return False, self._LOGIC_SCREEN_DESCRIPTION_ERROR
+                return False, self._LOGIC_SCREEN_DESCRIPTION_EOF
             if not self.read_global_color_table(f):
-                return False, self._GLOBAL_COLOR_TABLE_ERROR
+                return False, self._GLOBAL_COLOR_TABLE_EOF
             #  读取数据
             while self.identify_block(f) is not True:
                 continue
@@ -55,7 +61,10 @@ class GifDecoder(object):
         """
         identify_byte = binascii.hexlify(f.read(1))
         if identify_byte == '2c':
-            self.body_data.append(self.read_graphic_data(f))
+            graphic_data_info, message = self.read_graphic_data(f)
+            self.body_data.append(graphic_data_info)
+            if message != self._GRAPHIC_DATA_SUCCESS:
+                return False, message
         elif identify_byte == '21':
             extension_label = binascii.hexlify(f.read(1))
             if extension_label == 'f9':
@@ -71,8 +80,10 @@ class GifDecoder(object):
             else:
                 print "Unknown", extension_label
                 print "skip", GifDecoder.skip_unknown_block(f)
-        elif identify_byte == '3b' or identify_byte == '':  # 如果为''代表文件读完了
-            return True
+        elif identify_byte == '':  # 如果为''代表文件读完了
+            return False, self._IDENTIFY_BYTE_EMPTY
+        elif identify_byte == '3b':
+            return True, self._READ_END_SUCCESS
         else:
             print "Unknown", self.header['Version'], identify_byte
             print "skip", GifDecoder.skip_unknown_block(f)
@@ -127,85 +138,107 @@ class GifDecoder(object):
             self.global_color_table.append(struct.unpack('B', block_bytes[i:i+1])[0])
         return True
 
-    @staticmethod
-    def read_graphic_data(f):
+    def read_graphic_data(self, f):
         """
         读取图像数据
         :param f: 文件读取时的迭代器,要注意的是,在进入读取图像数据之前f已经读取了
                 Image Separator 用来判断是哪个block
-        :return: 这张图像所有信息的dict
+        :return: 这张图像所有信息的dict, 读取成功/失败的消息
         """
         res = dict()
         # 读取Image Descriptor
-        res['image_descriptor'] = GifDecoder.read_image_descriptor(f)
-        res['local_color_table'] = GifDecoder.read_local_color_table(f, res['image_descriptor'])
-        res['table_based_image_data'] = GifDecoder.read_table_based_image_data(f)
-        return res
+        image_descriptor_dict, message = self.read_image_descriptor(f)
+        if message != self._BLOCK_SUCCESS:
+            return res, message
+        res['image_descriptor'] = image_descriptor_dict
+        local_color_table_list, message = self.read_local_color_table(f, res['image_descriptor'])
+        if message != self._BLOCK_SUCCESS:
+            return res, message
+        res['local_color_table'] = local_color_table_list
+        table_based_image_data_dict, message = self.read_table_based_image_data(f)
+        if message != self._BLOCK_SUCCESS:
+            return res, message
+        res['table_based_image_data'] = table_based_image_data_dict
+        return res, self._GRAPHIC_DATA_SUCCESS
 
     @staticmethod
     def read_data_sub_block(f):
         """
         递归读取数据子块,直到读取到长度为0的block terminator
         :param f: 文件读取时的迭代器
-        :return: list of data
+        :return: str / None: 中间出现eof的情况
         """
-        size_info = struct.unpack('B', f.read(1))[0]
+        size_info_byte = f.read(1)
+        if size_info_byte == '':
+            return None
+        size_info = struct.unpack('B', size_info_byte)[0]
         if size_info == 0:
-            return []
-        res = [f.read(1) for _ in range(size_info)]
+            return ''
+        res = f.read(size_info)
+        if len(res) < size_info:  # EOF
+            return None
         res_next = GifDecoder.read_data_sub_block(f)
-        return res + res_next if res_next is not [] else res
+        return None if res_next is None else res + res_next
 
-    @staticmethod
-    def read_image_descriptor(f):
+    def read_image_descriptor(self, f):
         """
         读取图像的Image Descriptor, 每张图像有且仅有一个Image Descriptor
         :param f: 文件读取时的迭代器,需要注意的是在进入读取图像数据之前f已经读取了
                 Image Separator 用来判断是哪个block
-        :return: 包含属性的dict
+        :return: 包含属性的dict, 成功/失败消息
         """
         res = dict()
+        block_bytes = f.read(9)
+        if len(block_bytes) < 9:
+            return res, self._IMAGE_DESCRIPTOR_EOF
         res['image_separator'] = '2c'
-        res['image_left_position'] = struct.unpack('H', f.read(2))[0]
-        res['image_top_position'] = struct.unpack('H', f.read(2))[0]
-        res['image_width'] = struct.unpack('H', f.read(2))[0]
-        res['image_height'] = struct.unpack('H', f.read(2))[0]
-        packed_fields = f.read(1)
+        res['image_left_position'] = struct.unpack('H', block_bytes[0:2])[0]
+        res['image_top_position'] = struct.unpack('H', block_bytes[2:4])[0]
+        res['image_width'] = struct.unpack('H', block_bytes[4:6])[0]
+        res['image_height'] = struct.unpack('H', block_bytes[6:8])[0]
+        packed_fields = block_bytes[8:9]
         res['local_color_table_flag'] = read_bits_value_from_byte(packed_fields, 0, 1)
         res['interlace_flag'] = read_bits_value_from_byte(packed_fields, 1, 1)
         res['sort_flag'] = read_bits_value_from_byte(packed_fields, 2, 1)
         res['reversed'] = read_bits_value_from_byte(packed_fields, 3, 2)
         res['size_of_local_color_table'] = read_bits_value_from_byte(packed_fields, 5, 3)
-        return res
+        return res, self._BLOCK_SUCCESS
 
-    @staticmethod
-    def read_local_color_table(f, image_descriptor_dict):
+    def read_local_color_table(self, f, image_descriptor_dict):
         """
         读取图像的Local Color Table
         :param f: 文件读取时的迭代器
         :param image_descriptor_dict: 在Local Color Table之前的Image Descriptor的Dict
-        :return: 包含颜色bytes的list
+        :return: 包含颜色bytes的list, 成功/失败的消息
         """
         local_color_datas = []
         if image_descriptor_dict['local_color_table_flag'] != 1:
-            return local_color_datas
+            return local_color_datas, self._BLOCK_SUCCESS
         size = image_descriptor_dict['size_of_local_color_table']
         length = 3 * pow(2, size+1)
-        for i in range(length):
-            local_color_datas.append(struct.unpack('B', f.read(1))[0])
-        return local_color_datas
+        block_bytes = f.read(length)
+        if len(block_bytes) < length:
+            return local_color_datas, self._LOCAL_COLOR_TABLE_EOF
+        for i in xrange(length):
+            local_color_datas.append(struct.unpack('B', block_bytes[i:i+1])[0])
+        return local_color_datas, self._BLOCK_SUCCESS
 
-    @staticmethod
-    def read_table_based_image_data(f):
+    def read_table_based_image_data(self, f):
         """
         读取图像的Table Based Image Data
         :param f: 文件读取时的迭代器
-        :return: 包含table based image data的dict
+        :return: 包含table based image data的dict, 成功/失败信息
         """
         res = dict()
-        res['lzw_minimum_code_size'] = struct.unpack('B', f.read(1))[0]
+        minimum_code_size_byte = f.read(1)
+        if minimum_code_size_byte == '':
+            return res, self._IMAGE_DATA_EOF
+        res['lzw_minimum_code_size'] = struct.unpack('B', minimum_code_size_byte)[0]
         res['image_data'] = GifDecoder.read_data_sub_block(f)
-        return res
+        if res['image_data'] is not None:
+            return res, self._BLOCK_SUCCESS
+        else:
+            return res, self._IMAGE_DATA_EOF
 
     @staticmethod
     def skip_unknown_block(f):
